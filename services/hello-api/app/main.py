@@ -11,12 +11,16 @@ import paho.mqtt.client as mqtt
 from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 
+from dotenv import load_dotenv
+
+load_dotenv() 
+
 
 # ----------------------------
 # Config (env vars)
 # ----------------------------
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
-MQTT_PORT = int(os.getenv("MQTT_PORT", "2883"))
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 
 BASE_TOPIC = os.getenv("BASE_TOPIC", "tennis/sensor/1/events")
 PUB_TOPIC = os.getenv("PUB_TOPIC", BASE_TOPIC)
@@ -125,6 +129,16 @@ def mqtt_worker():
 # ----------------------------
 # InfluxDB 3 write (Phase 1 persistence)
 # ----------------------------
+
+def iso_to_epoch_seconds(ts: str) -> int:
+    # Handles ISO like "2026-02-10T16:59:10.239950Z" or with +00:00
+    ts = ts.replace("Z", "+00:00")
+    dt = datetime.fromisoformat(ts)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
+
+
 def write_event_to_influx(ev: Dict[str, Any]) -> None:
     """
     Minimal InfluxDB 3 write path.
@@ -149,16 +163,17 @@ def write_event_to_influx(ev: Dict[str, Any]) -> None:
     # table,tagKey=tagVal fieldKey="value" timestamp
     # We’ll store event_type/topic as tags for easy filtering.
     topic = ev.get("topic", "unknown")
-    ts = ev.get("ts", now_iso())
+    ts_epoch = iso_to_epoch_seconds(ev.get("ts") or now_iso())
 
     # store payload as JSON string field (simple MVP)
     payload_str = json.dumps(ev.get("payload", {}), ensure_ascii=False)
 
-    # Influx wants timestamps typically in nanoseconds or RFC3339 depending on client;
-    # the v3 client can handle RFC3339 in many examples; we’ll keep this simple for now.
-    line = f'{INFLUX_TABLE},topic={topic.replace(" ", "\\ ")} payload="{payload_str.replace("\"", "\\\"")}" {ts}'
+    # line protocol: measurement,tag=value field="..." timestamp
+    # tags: keep simple for now (topic as a tag)
+    escaped_payload = payload_str.replace('"', '\\"')
+    line = f'{INFLUX_TABLE},topic={topic} payload="{escaped_payload}" {ts_epoch}'
 
-    client.write(record=line)
+    client.write(record=line, write_precision="s")
 
 
 @asynccontextmanager
@@ -210,3 +225,6 @@ class PublishIn(BaseModel):
 def publish(data: PublishIn):
     mqtt_client.publish(data.topic, json.dumps(data.payload), qos=0)
     return {"sent": True, "topic": data.topic, "payload": data.payload}
+
+
+print("INFLUX TOKEN LOADED:", bool(INFLUX_TOKEN))

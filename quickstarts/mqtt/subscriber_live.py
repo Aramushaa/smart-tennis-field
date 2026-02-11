@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 
 BROKER = "localhost"
-PORT   = 2883
+PORT   = 1883
 TOPIC  = "tennis/sensor/1/events"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="subscriber-1")

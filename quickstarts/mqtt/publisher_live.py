@@ -3,7 +3,7 @@ import paho.mqtt.client as mqtt
 from datetime import datetime
 
 BROKER = "localhost"
-PORT   = 2883
+PORT   = 1883
 TOPIC  = "tennis/sensor/1/events"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="publisher-1")
