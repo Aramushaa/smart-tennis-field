@@ -91,12 +91,24 @@ If working:
 
 Before running uvicorn:
 
+## 🔒 Security Notice
+
+❗ Never commit your Influx token.
+
+Create a `.env` file:
+
 ```bash
-export INFLUX_ENABLED=1
-export INFLUX_HOST=http://localhost:8181
-export INFLUX_TOKEN=YOUR_TOKEN_HERE
-export INFLUX_DATABASE=tennis
-export INFLUX_TABLE=events
+INFLUX_ENABLED=1
+INFLUX_HOST=http://localhost:8181
+INFLUX_TOKEN=your_token_here
+INFLUX_DATABASE=tennis
+INFLUX_TABLE=events
+```
+
+Add to `.gitignore`:
+
+```
+.env
 ```
 
 Now start FastAPI:
@@ -194,25 +206,7 @@ Most common cause:
 - `INFLUX_ENABLED=1` but token not set
 - Using wrong timestamp format
 
-## 🔒 Security Notice
 
-❗ Never commit your Influx token.
-
-Create a `.env` file:
-
-```bash
-INFLUX_ENABLED=1
-INFLUX_HOST=http://localhost:8181
-INFLUX_TOKEN=your_token_here
-INFLUX_DATABASE=tennis
-INFLUX_TABLE=events
-```
-
-Add to `.gitignore`:
-
-```
-.env
-```
 
 ## ✅ What Works Now
 
