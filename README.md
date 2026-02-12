@@ -1,21 +1,38 @@
 # 🎾 Smart Tennis Field — Thesis
 
-Version: 0.3 (Phase 1 – Influx Persistence Working)
+Version: 0.4
+Status: Phase 1 Completed — Ingestion + Persistence + Retrieval
 
-A Python-based Smart Tennis Field backend using MQTT + FastAPI + InfluxDB 3, designed for real-time ingestion of sensor and camera events with time-series persistence.
+A Python-based Smart Tennis Field backend using:
 
-## 🧱 Architecture Overview
+- MQTT (event bus)
+- FastAPI (microservice layer)
+- InfluxDB 3 Core (time-series persistence)
 
-- Sensors / Cameras → publish events via MQTT
-- MQTT Broker (EMQX) → central event bus
-- Ingest Service (FastAPI):
-  - subscribes to MQTT topics
-  - normalizes and validates events
-  - stores events (in-memory → InfluxDB 3)
-  - exposes REST APIs
-- Time-Series Database: InfluxDB 3 Core
+Designed for real-time ingestion, storage, and querying of tennis sensor and camera events.
 
-## ✅ Phase 0 — MQTT Quickstart (Completed)
+## 🧱 Architecture Overview (Current System)
+
+Sensor / Camera
+        ↓
+      MQTT (EMQX)
+        ↓
+  Ingest Service (FastAPI)
+        ↓
+   InfluxDB 3 Core
+        ↓
+   REST Query API
+
+## ✅ Phase 0 — MQTT Infrastructure (Completed)
+
+Goal: Verify event transport layer.
+
+Implemented
+
+- EMQX broker in Docker
+- Publisher script (`publisher_live.py`)
+- Subscriber script (`subscriber_live.py`)
+- Verified via EMQX dashboard
 
 ### Run EMQX
 
@@ -28,15 +45,15 @@ docker run -d --name emqx \
 
 ### Dashboard
 
-- URL: http://localhost:18083
-- Username: admin
-- Password: public
+- http://localhost:18083
+- user: admin
+- pass: public
 
-## 🚧 Phase 1 — Ingest Service + Persistence (Working)
+## ✅ Phase 1 — Ingestion + Persistence (Completed)
+
+Goal: Convert MQTT messages into persistent, queryable data.
 
 ### Step 1 — Run InfluxDB 3 Core
-
-⚠️ Important: If you remove the container, your token will change.
 
 ```bash
 docker pull influxdb:3-core
@@ -47,55 +64,32 @@ docker run -it --name influxdb3 \
   influxdb:3-core influxdb3
 ```
 
-### Step 2 — Create Admin Token (MANDATORY)
+⚠️ If you delete the container, tokens must be recreated.
 
-After Influx starts, open a new terminal:
+### Step 2 — Create Admin Token
 
 ```bash
 curl -X POST http://localhost:8181/api/v3/configure/token/admin
 ```
 
-Example output:
-
-```json
-{
-  "id": 0,
-  "name": "_admin",
-  "token": "apiv3_xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-}
-```
-
-🔑 Copy the value of `token`
-
-You must use this token for:
-
-- Health checks
-- Writes
-- Queries
-- FastAPI environment variable
+Copy the `token` value.
 
 ### Step 3 — Test Token
 
 ```bash
 curl http://localhost:8181/health \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-If working:
+Expected:
 
 ```json
 {"status":"pass"}
 ```
 
-### Step 4 — Configure FastAPI to Use Influx
+### Step 4 — Configure FastAPI
 
-Before running uvicorn:
-
-## 🔒 Security Notice
-
-❗ Never commit your Influx token.
-
-Create a `.env` file:
+Create `.env` file:
 
 ```bash
 INFLUX_ENABLED=1
@@ -111,7 +105,7 @@ Add to `.gitignore`:
 .env
 ```
 
-Now start FastAPI:
+Start FastAPI:
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -123,117 +117,71 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 python publisher_live.py
 ```
 
-Now verify:
+Verify:
 
-- GET http://localhost:8000/events?limit=10
-- FastAPI logs show no `[INFLUX] write error`
-- Influx logs show no `InvalidToken`
+- `GET /events?limit=10`
+- `GET /events?source=influx&limit=10`
+- No `[INFLUX] write error`
 
-## 🧠 Why Token Changes
+## 🧠 Event Model
 
-If you:
+Stored structure:
 
-- Stop and remove container
-- Run `docker rm influxdb3`
-- Run a fresh container
-
-Then InfluxDB creates a new catalog and previous token becomes invalid.
-
-⚠️ In that case, you must re-run:
-
-```bash
-curl -X POST http://localhost:8181/api/v3/configure/token/admin
+```json
+{
+  "time": "...",
+  "topic": "...",
+  "payload": "{original JSON string}"
+}
 ```
 
-And update:
+Events can be queried with:
 
 ```bash
-export INFLUX_TOKEN=NEW_TOKEN
+curl --get "http://localhost:8181/api/v3/query_sql" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  --data-urlencode "db=tennis" \
+  --data-urlencode "q=SELECT * FROM events LIMIT 10"
 ```
 
-## ⚠️ Common Errors & Fixes
+## ⚠️ Common Errors
 
-❌ Error: MissingToken
+MissingToken
 
-`cannot authenticate token e=MissingToken`
-
-Cause:
-
-- No Authorization header sent
+- No Authorization header.
 
 Fix:
 
-- `-H "Authorization: Bearer YOUR_TOKEN"`
+- `-H "Authorization: Bearer TOKEN"`
 
-❌ Error: InvalidToken
+InvalidToken
 
-`cannot authenticate token e=InvalidToken path="/api/v2/write"`
-
-Cause:
-
-- Wrong token
-- Old token from deleted container
-- Using v2 endpoint incorrectly
-
-Fix:
-
-- Generate new admin token
-- Update `INFLUX_TOKEN`
-- Restart FastAPI
-
-❌ Error: Authorization header malformed
-
-Cause:
-
+- Old token
+- Deleted container
 - Wrong header format
 
-Wrong:
+Fix:
 
-- `-H "Authorization: YOUR_TOKEN"`
+- Recreate token
+- Update `.env`
+- Restart FastAPI
 
-Correct:
+`/api/v2/write` errors
 
-- `-H "Authorization: Bearer YOUR_TOKEN"`
+- Old v2 client writing to v3 server.
 
-❌ Error: Writes failing silently
+Fix:
 
-Check FastAPI logs:
-
-`[INFLUX] write error: ...`
-
-Most common cause:
-
-- `INFLUX_ENABLED=1` but token not set
-- Using wrong timestamp format
-
-
+- Use InfluxDB 3 client only.
 
 ## ✅ What Works Now
 
-- MQTT ingestion
-- Event normalization
+- Real-time MQTT ingestion
+- Normalized event envelope
 - In-memory debug buffer
 - InfluxDB 3 persistence
-- Token-based authentication
+- Time-range queries via `/events?from=&to=`
+- SQL queries directly against Influx
+- Restart-safe data storage
 
-Manual SQL query via:
-
-```bash
-curl "http://localhost:8181/api/v3/query_sql?db=tennis" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"query":"SELECT * FROM events LIMIT 10"}'
-```
-
-## 🗺️ Next Roadmap
-
-Phase 1 Completion:
-
-- Replace memory buffer query with Influx-backed query
-- Implement `GET /events?from=...&to=...`
-
-Phase 2:
-
-- Rules engine
-- Alert publishing
-- Camera event support
+Phase 1 is complete.

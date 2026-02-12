@@ -11,6 +11,9 @@ import paho.mqtt.client as mqtt
 from fastapi import FastAPI, Query
 from pydantic import BaseModel, Field
 
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
 from dotenv import load_dotenv
 
 load_dotenv() 
@@ -175,6 +178,26 @@ def write_event_to_influx(ev: Dict[str, Any]) -> None:
 
     client.write(record=line, write_precision="s")
 
+def query_influx_sql(sql: str) -> list[dict]:
+    """
+    Query InfluxDB 3 using the v3 SQL endpoint.
+    Returns a list of dict rows (JSON array).
+    """
+    if not INFLUX_TOKEN:
+        raise RuntimeError("INFLUX_TOKEN is empty")
+
+    # InfluxDB 3 core SQL endpoint:
+    # GET /api/v3/query_sql?db=<db>&q=<sql>
+    params = urlencode({"db": INFLUX_DATABASE, "q": sql})
+    url = f"{INFLUX_HOST}/api/v3/query_sql?{params}"
+
+    req = Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {INFLUX_TOKEN}")
+
+    with urlopen(req, timeout=10) as resp:
+        body = resp.read().decode("utf-8")
+    return json.loads(body)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -206,14 +229,56 @@ def health():
 
 
 @app.get("/events")
-def get_events(limit: int = Query(50, ge=1, le=EVENT_BUFFER_MAX)):
+def get_events(
+    limit: int = Query(50, ge=1, le=500),
+    from_ts: Optional[str] = Query(None, alias="from"),
+    to_ts: Optional[str] = Query(None, alias="to"),
+    source: str = Query("auto", pattern="^(auto|influx|memory)$"),
+):
     """
-    Returns last N events from memory.
-    This is your “debug window” to prove ingestion works.
+    Events API
+
+    source:
+      - auto  -> Influx if enabled, else memory
+      - influx -> force Influx
+      - memory -> force in-memory buffer
+
+    from/to:
+      ISO timestamps (e.g. 2026-02-11T22:33:25Z) or compatible format used by Influx.
     """
+    use_influx = INFLUX_ENABLED and INFLUX_TOKEN and source in ("auto", "influx")
+
+    if use_influx:
+        where = []
+        if from_ts:
+            where.append(f"time >= '{from_ts}'")
+        if to_ts:
+            where.append(f"time <= '{to_ts}'")
+
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        sql = f"""
+        SELECT time, topic, payload
+        FROM {INFLUX_TABLE}
+        {where_sql}
+        ORDER BY time DESC
+        LIMIT {limit}
+        """.strip()
+
+        try:
+            rows = query_influx_sql(sql)
+            # Return newest -> oldest from DB query
+            return {"source": "influx", "count": len(rows), "events": rows}
+        except Exception as e:
+            # Fallback to memory if auto mode (so the API never dies during demo)
+            if source == "auto":
+                print("[INFLUX] query error, falling back to memory:", e)
+            else:
+                raise
+
+    # MEMORY FALLBACK
     with EVENTS_LOCK:
         items = list(EVENTS)[-limit:]
-    return {"count": len(items), "events": items}
+    return {"source": "memory", "count": len(items), "events": items}
 
 
 class PublishIn(BaseModel):
