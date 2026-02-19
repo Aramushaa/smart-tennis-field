@@ -2,8 +2,9 @@ import json, time
 import paho.mqtt.client as mqtt
 from datetime import datetime
 
-BROKER = "localhost"
-PORT   = 1883
+import os
+BROKER = os.getenv("MQTT_HOST", "emqx")
+PORT = int(os.getenv("MQTT_PORT", "1883"))
 TOPIC  = "tennis/sensor/1/events"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="publisher-1")
@@ -11,9 +12,15 @@ client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="publisher-1")
 def on_connect(client, userdata, flags, rc, properties=None):
     print("Publisher connected rc=", rc)
 
-print(f"[PUB] connecting to {BROKER}:{PORT}")
-client.on_connect = on_connect
-client.connect(BROKER, PORT, 60)
+while True:
+    try:
+        print(f"[PUB] connecting to {BROKER}:{PORT}")
+        client.connect(BROKER, PORT, 60)
+        break
+    except Exception as e:
+        print("[PUB] broker not ready, retry in 2s:", e)
+        time.sleep(2)
+        
 client.loop_start()
 
 try:

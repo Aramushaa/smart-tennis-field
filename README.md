@@ -1,187 +1,174 @@
-# 🎾 Smart Tennis Field — Thesis
+🎾 Smart Tennis Field — IoT Event Pipeline (Docker Edition)
+📌 Overview
 
-Version: 0.4
-Status: Phase 1 Completed — Ingestion + Persistence + Retrieval
+This project implements a Smart Tennis Field architecture using:
 
-A Python-based Smart Tennis Field backend using:
+🟢 EMQX (MQTT Broker)
 
-- MQTT (event bus)
-- FastAPI (microservice layer)
-- InfluxDB 3 Core (time-series persistence)
+🔵 InfluxDB 3 Core (Time-series database)
 
-Designed for real-time ingestion, storage, and querying of tennis sensor and camera events.
+🟣 FastAPI Ingest Service
 
-## 🧱 Architecture Overview (Current System)
+🟡 Sensor Simulator (Fake publisher)
 
-Sensor / Camera
-        ↓
-      MQTT (EMQX)
-        ↓
-  Ingest Service (FastAPI)
-        ↓
-   InfluxDB 3 Core
-        ↓
-   REST Query API
+All services run using Docker Compose.
 
-## ✅ Phase 0 — MQTT Infrastructure (Completed)
+🏗 Architecture
+Sensor Simulator  →  EMQX (MQTT Broker)
+                        ↓
+                 Ingest Service (Subscriber)
+                        ↓
+                  InfluxDB 3 Core
 
-Goal: Verify event transport layer.
+Flow:
 
-Implemented
+Sensor simulator publishes fake tennis events
 
-- EMQX broker in Docker
-- Publisher script (`publisher_live.py`)
-- Subscriber script (`subscriber_live.py`)
-- Verified via EMQX dashboard
+EMQX handles message routing
 
-### Run EMQX
+Ingest service subscribes to:
 
-```bash
-docker run -d --name emqx \
-  -p 1883:1883 \
-  -p 18083:18083 \
-  emqx:latest
-```
+tennis/sensor/+/events
 
-### Dashboard
 
-- http://localhost:18083
-- user: admin
-- pass: public
+Events are:
 
-## ✅ Phase 1 — Ingestion + Persistence (Completed)
+Normalized
 
-Goal: Convert MQTT messages into persistent, queryable data.
+Validated
 
-### Step 1 — Run InfluxDB 3 Core
+Stored in InfluxDB
 
-```bash
-docker pull influxdb:3-core
+🚀 How to Run (Docker Compose Only)
 
-docker run -it --name influxdb3 \
-  -p 8181:8181 \
-  -v ~/.influxdb3_data:/.data \
-  influxdb:3-core influxdb3
-```
+⚠️ Old manual Python execution is removed.
+Everything runs through Docker.
 
-⚠️ If you delete the container, tokens must be recreated.
+1️⃣ Start All Services
 
-### Step 2 — Create Admin Token
+From project root:
 
-```bash
-curl -X POST http://localhost:8181/api/v3/configure/token/admin
-```
+docker compose up --build
 
-Copy the `token` value.
 
-### Step 3 — Test Token
+To run in background:
 
-```bash
-curl http://localhost:8181/health \
-  -H "Authorization: Bearer YOUR_TOKEN"
-```
+docker compose up -d --build
 
-Expected:
+2️⃣ Check Running Services
+docker compose ps
 
-```json
-{"status":"pass"}
-```
+3️⃣ Stop Services
+docker compose down
 
-### Step 4 — Configure FastAPI
 
-Create `.env` file:
+⚠️ DO NOT use:
 
-```bash
+docker compose down -v
+
+
+This deletes InfluxDB data and your token.
+
+🔐 Creating InfluxDB Admin Token
+
+InfluxDB 3 Core does NOT auto-generate a persistent token for you.
+
+After starting containers:
+
+docker exec -it influxdb3 influxdb3 create token --admin
+
+
+It will output something like:
+
+Token: eyJhbGciOi...
+
+
+Copy this token.
+
+Add Token to .env
+
+Create or update .env file in project root:
+
+INFLUX_TOKEN=YOUR_TOKEN_HERE
 INFLUX_ENABLED=1
-INFLUX_HOST=http://localhost:8181
-INFLUX_TOKEN=your_token_here
-INFLUX_DATABASE=tennis
-INFLUX_TABLE=events
-```
 
-Add to `.gitignore`:
 
-```
+Example:
+
+INFLUX_TOKEN=eyJhbGciOi...
+INFLUX_ENABLED=1
+
+
+Then restart ingest service:
+
+docker compose restart ingest-service
+
+🌐 Service Endpoints
+EMQX Dashboard
+http://localhost:18083
+
+InfluxDB 3
+http://localhost:8181
+
+Ingest Service API
+http://localhost:8000
+
+📡 Available API Endpoints
+Health Check
+GET /health
+
+Get Recent Events
+GET /events?limit=10
+
+Publish Test Event
+POST /publish
+
+📁 Project Structure
+services/
+  ingest_service/
+    app/
+      main.py
+      mqtt.py
+      influx.py
+      config.py
+
+quickstarts/
+  mqtt/
+    Dockerfile.sensor
+
+docker-compose.yml
 .env
-```
 
-Start FastAPI:
+🧠 Development Philosophy
 
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
+Sensors are currently simulated (fake data)
 
-### Step 5 — Run Publisher
+Architecture is production-ready
 
-```bash
-python publisher_live.py
-```
+Real camera + YOLO pipeline can replace sensor-sim later
 
-Verify:
+Backend remains unchanged
 
-- `GET /events?limit=10`
-- `GET /events?source=influx&limit=10`
-- No `[INFLUX] write error`
+🔄 If You Lose Token
 
-## 🧠 Event Model
+If you accidentally delete volume:
 
-Stored structure:
+docker compose down -v
 
-```json
-{
-  "time": "...",
-  "topic": "...",
-  "payload": "{original JSON string}"
-}
-```
 
-Events can be queried with:
+You must:
 
-```bash
-curl --get "http://localhost:8181/api/v3/query_sql" \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  --data-urlencode "db=tennis" \
-  --data-urlencode "q=SELECT * FROM events LIMIT 10"
-```
+Restart containers
 
-## ⚠️ Common Errors
+Recreate admin token
 
-MissingToken
+Update .env
 
-- No Authorization header.
+Restart ingest-service
 
-Fix:
+📌 Current Phase
 
-- `-H "Authorization: Bearer TOKEN"`
-
-InvalidToken
-
-- Old token
-- Deleted container
-- Wrong header format
-
-Fix:
-
-- Recreate token
-- Update `.env`
-- Restart FastAPI
-
-`/api/v2/write` errors
-
-- Old v2 client writing to v3 server.
-
-Fix:
-
-- Use InfluxDB 3 client only.
-
-## ✅ What Works Now
-
-- Real-time MQTT ingestion
-- Normalized event envelope
-- In-memory debug buffer
-- InfluxDB 3 persistence
-- Time-range queries via `/events?from=&to=`
-- SQL queries directly against Influx
-- Restart-safe data storage
-
-Phase 1 is complete.
+✅ MQTT Working
+✅ Ingest Service MVP
+✅ InfluxDB Persistence
+🚧 Vision Pipeline (Planned)

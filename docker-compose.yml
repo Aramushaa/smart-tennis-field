@@ -1,0 +1,56 @@
+services:
+  emqx:
+    image: emqx:latest
+    container_name: emqx
+    ports:
+      - "2883:1883"
+      - "18083:18083"
+    restart: always
+
+  influxdb3:
+    image: influxdb:3-core
+    container_name: influxdb3
+    user: "0:0"
+    command: ["influxdb3", "serve", "--node-id", "node0"]
+    ports:
+      - "8181:8181"
+    volumes:
+      - influxdb3_data:/root/.influxdb
+    restart: always
+
+  ingest-service:
+    build:
+      context: ./services/ingest_service
+      dockerfile: Dockerfile
+    container_name: ingest-service
+    depends_on:
+      - emqx
+      - influxdb3
+    env_file:
+      - .env
+    environment:
+      MQTT_HOST: emqx
+      MQTT_PORT: "1883"
+      SUB_TOPICS: tennis/sensor/+/events
+      INFLUX_ENABLED: "1"
+      INFLUX_HOST: http://influxdb3:8181
+      INFLUX_DATABASE: tennis
+      INFLUX_TABLE: events
+    ports:
+      - "8000:8000"
+    restart: always
+
+  sensor-sim:
+    build:
+      context: ./quickstarts/mqtt
+      dockerfile: Dockerfile.sensor
+    container_name: sensor-sim
+    depends_on:
+      - emqx
+    environment:
+      MQTT_HOST: emqx
+      MQTT_PORT: "1883"
+    restart: always
+
+volumes:
+  influxdb3_data:
