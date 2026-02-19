@@ -1,174 +1,112 @@
-🎾 Smart Tennis Field — IoT Event Pipeline (Docker Edition)
-📌 Overview
+# Smart Tennis Field — IoT Event Pipeline (Docker Compose)
 
+## Overview
 This project implements a Smart Tennis Field architecture using:
 
-🟢 EMQX (MQTT Broker)
+- EMQX (MQTT broker)
+- InfluxDB 3 Core (time-series database)
+- FastAPI ingest service
+- Sensor simulator (fake publisher)
 
-🔵 InfluxDB 3 Core (Time-series database)
+All services run with Docker Compose.
 
-🟣 FastAPI Ingest Service
+## Architecture
+```
+Sensor Simulator -> EMQX (MQTT)
+                     |
+                     v
+              Ingest Service
+                     |
+                     v
+               InfluxDB 3 Core
+                     |
+                     v
+                 REST API
+```
 
-🟡 Sensor Simulator (Fake publisher)
+## Quickstart (Docker Compose)
 
-All services run using Docker Compose.
-
-🏗 Architecture
-Sensor Simulator  →  EMQX (MQTT Broker)
-                        ↓
-                 Ingest Service (Subscriber)
-                        ↓
-                  InfluxDB 3 Core
-
-Flow:
-
-Sensor simulator publishes fake tennis events
-
-EMQX handles message routing
-
-Ingest service subscribes to:
-
-tennis/sensor/+/events
-
-
-Events are:
-
-Normalized
-
-Validated
-
-Stored in InfluxDB
-
-🚀 How to Run (Docker Compose Only)
-
-⚠️ Old manual Python execution is removed.
-Everything runs through Docker.
-
-1️⃣ Start All Services
-
-From project root:
-
-docker compose up --build
-
-
-To run in background:
-
+1. Start all services:
+```bash
 docker compose up -d --build
+```
 
-2️⃣ Check Running Services
-docker compose ps
-
-3️⃣ Stop Services
-docker compose down
-
-
-⚠️ DO NOT use:
-
-docker compose down -v
-
-
-This deletes InfluxDB data and your token.
-
-🔐 Creating InfluxDB Admin Token
-
-InfluxDB 3 Core does NOT auto-generate a persistent token for you.
-
-After starting containers:
-
+2. Create an admin token:
+```bash
 docker exec -it influxdb3 influxdb3 create token --admin
+```
 
-
-It will output something like:
-
-Token: eyJhbGciOi...
-
-
-Copy this token.
-
-Add Token to .env
-
-Create or update .env file in project root:
-
-INFLUX_TOKEN=YOUR_TOKEN_HERE
+3. Put the token in `.env`:
+```bash
+INFLUX_TOKEN=YOUR_TOKEN
 INFLUX_ENABLED=1
+```
 
-
-Example:
-
-INFLUX_TOKEN=eyJhbGciOi...
-INFLUX_ENABLED=1
-
-
-Then restart ingest service:
-
+4. Restart the ingest service to reload `.env`:
+```bash
 docker compose restart ingest-service
+```
 
-🌐 Service Endpoints
-EMQX Dashboard
-http://localhost:18083
+## Endpoints
 
-InfluxDB 3
-http://localhost:8181
+- EMQX dashboard: http://localhost:18083
+- InfluxDB 3 Core: http://localhost:8181
+- Ingest service API: http://localhost:8000
 
-Ingest Service API
-http://localhost:8000
+## API Routes
 
-📡 Available API Endpoints
-Health Check
-GET /health
+- `GET /health`
+- `GET /events?limit=10`
+- `POST /publish`
 
-Get Recent Events
-GET /events?limit=10
+## MQTT Ports
 
-Publish Test Event
-POST /publish
+- Host port: `2883`
+- Container port: `1883`
 
-📁 Project Structure
-services/
-  ingest_service/
-    app/
-      main.py
-      mqtt.py
-      influx.py
-      config.py
+If you connect from your host machine, use port `2883`.
 
-quickstarts/
-  mqtt/
-    Dockerfile.sensor
+## Stop Services
 
-docker-compose.yml
-.env
+```bash
+docker compose down
+```
 
-🧠 Development Philosophy
+Do not use `docker compose down -v` unless you want to delete InfluxDB data and regenerate tokens.
 
-Sensors are currently simulated (fake data)
+## Project Structure
 
-Architecture is production-ready
+- `services/ingest_service/app/main.py`
+- `services/ingest_service/app/mqtt.py`
+- `services/ingest_service/app/influx.py`
+- `services/ingest_service/app/config.py`
+- `quickstarts/mqtt/Dockerfile.sensor`
+- `docker-compose.yml`
+- `.env`
 
-Real camera + YOLO pipeline can replace sensor-sim later
+## Troubleshooting
 
-Backend remains unchanged
+- EMQX fails to start due to port conflict:
+  - Change `1883` to another host port in `docker-compose.yml` (e.g. `2883:1883`).
+  - Update your host-side MQTT clients to match.
 
-🔄 If You Lose Token
+- InfluxDB auth errors:
+  - Ensure `INFLUX_TOKEN` is set in `.env` and restart `ingest-service`.
+  - If the volume was deleted, regenerate the admin token.
 
-If you accidentally delete volume:
+- Ingest service can’t connect to MQTT:
+  - Confirm `emqx` container is running: `docker compose ps`.
+  - Check logs: `docker compose logs emqx ingest-service`.
 
-docker compose down -v
+## Contributing
 
+- Keep changes focused and scoped per commit.
+- Prefer Docker Compose for local testing.
+- Update `README.md` or `Phases.md` when behavior or workflow changes.
 
-You must:
+## Current Phase
 
-Restart containers
-
-Recreate admin token
-
-Update .env
-
-Restart ingest-service
-
-📌 Current Phase
-
-✅ MQTT Working
-✅ Ingest Service MVP
-✅ InfluxDB Persistence
-🚧 Vision Pipeline (Planned)
+- MQTT working
+- Ingest service MVP
+- InfluxDB persistence
+- Vision pipeline planned

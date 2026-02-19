@@ -1,386 +1,204 @@
-📘 phases.md — Smart Tennis Field (Master Thesis) Roadmap
+# Phases — Smart Tennis Field Roadmap
+
+This file defines the system evolution from MVP to thesis-grade distributed system.
+Each phase includes: Goal, Deliverables, Definition of Done, and Notes.
 
-This file defines the system evolution from MVP → Thesis-grade distributed system.
+## Phase 0 — MQTT Infrastructure (Done)
 
-Each phase contains:
+Goal: Validate reliable end-to-end event transport over MQTT.
 
-🎯 Goal
+Deliverables:
+- EMQX broker (Dockerized)
+- Dummy publisher -> `tennis/sensor/1/events`
+- Subscriber confirming message receipt
+- Topic naming convention defined
+- JSON payload schema defined
 
-📦 Deliverables
+Definition of Done:
+- Publisher -> broker -> subscriber verified
+- QoS behavior understood
+- Payload structure documented
 
-✅ Definition of Done
+Notes:
+- This phase validates messaging reliability before persistence.
+- MQTT chosen for lightweight event-driven architecture.
 
-🧠 Engineering Notes
+## Phase 1 — Ingest Service + Persistence (Done)
 
-Phase 0 — MQTT Infrastructure (✅ Done)
-🎯 Goal
+Goal: Transform MQTT events into durable, queryable time-series data.
 
-Validate reliable end-to-end event transport over MQTT.
+Deliverables:
+- FastAPI ingest microservice
+- MQTT client lifecycle managed via FastAPI lifespan
+- Event normalization envelope
+- In-memory ring buffer (debug window)
+- InfluxDB 3 Core persistence
+- Time-range query endpoints
+- Docker Compose deployment
+- Token generation workflow documented
 
-📦 Deliverables
+Definition of Done:
+- MQTT events written to InfluxDB 3
+- Data persists across service restarts
+- Time-range queries return correct data
+- Token-based authentication verified
 
-EMQX broker (Dockerized)
+Notes:
+- InfluxDB 3 Core requires a Bearer token.
+- Line protocol used for write efficiency.
+- Tags: `stream`, `source_id`
+- Field: `payload` (JSON string)
 
-Dummy publisher → tennis/sensor/1/events
+## Phase 2 — Real Producers (Edge Gateways)
 
-Subscriber confirming message receipt
+Goal: Replace simulated data with real edge gateways.
 
-Topic naming convention defined
+### Phase 2A — Vision Gateway (YOLO)
 
-JSON payload schema defined
+Deliverables:
+- `vision-gateway` service
+- Reads RTSP / USB / video file
+- YOLO-based ball detection
+- Basic tracking (ID + trajectory)
+- Publishes to `tennis/camera/<id>/ball`
 
-✅ Definition of Done
+Definition of Done:
+- Ball detections appear in InfluxDB
+- Stable publish rate
+- Frame processing latency measured
 
-Publisher → broker → subscriber verified
+### Phase 2B — Sensor Gateway (ST AIoT Craft)
 
-QoS behavior understood
+Deliverables:
+- `sensor-gateway` service
+- Reads ST AIoT Craft output (BLE/UART/etc.)
+- Publishes to `tennis/sensor/<id>/events`
 
-Payload structure documented
+Definition of Done:
+- Sensor data stored in DB
+- Timestamp synchronization validated
 
-🧠 Notes
+Notes:
+- Gateways publish only; they never access the database directly.
+- All persistence flows through ingest service.
+- Time synchronization strategy must be defined: edge timestamp vs server timestamp.
 
-This phase validates messaging reliability before persistence.
+## Phase 3 — Rules Engine (Tennis Semantics)
 
-MQTT chosen for lightweight event-driven architecture.
+Goal: Convert raw telemetry into tennis events.
 
-Phase 1 — Ingest Service + Persistence (✅ Done)
-🎯 Goal
+Deliverables:
+- `rules-engine` microservice
+- Correlates sensor events and ball trajectory
+- Detects bounce, serve_ok / serve_fault, out
+- Publishes to `tennis/alerts/<type>`
 
-Transform MQTT events into durable, queryable time-series data.
+Definition of Done:
+- Deterministic rule evaluation
+- Reproducible alert generation
+- Alerts stored in DB
 
-📦 Deliverables
+Notes:
+- This is where the project becomes academically interesting.
+- Multi-stream correlation and time window alignment are key risks.
 
-FastAPI ingest microservice
+## Phase 4 — Control Unit (System Orchestration)
 
-MQTT client lifecycle managed via FastAPI lifespan
+Goal: Introduce system-level state and control plane.
 
-Event normalization envelope:
+Deliverables:
+- `control-unit` service
+- Match states: idle, warmup, match, maintenance
+- Publishes to `tennis/cmd/<target>`
+- Heartbeat monitoring: `tennis/system/heartbeat/<node>`
 
-{
-  "topic": "...",
-  "ts": "...",
-  "payload": {...}
-}
+Definition of Done:
+- System behavior changes based on mode
+- Services respond to commands
 
+Notes:
+- This introduces distributed coordination and operational robustness.
 
-In-memory ring buffer (debug window)
+## Phase 5 — Visualization Layer
 
-InfluxDB 3 Core persistence
+Goal: Make the system observable.
 
-Time-range query endpoints:
+### Phase 5A — Grafana MVP (Recommended First)
 
-GET /events?limit=N
+Deliverables:
+- InfluxDB datasource
+- Panels: events/min, stream breakdown, alert rate, time-series view
 
-GET /events?from=...&to=...&limit=N
+Definition of Done:
+- Real-time ingestion visible
+- Historical exploration possible
 
-Docker Compose deployment
+### Phase 5B — Custom Web UI (Optional)
 
-Token generation workflow documented
+Deliverables:
+- React/Next.js dashboard
+- Live feed via WebSocket
+- Event replay
 
-✅ Definition of Done
+## Phase 6 — Highlight Clipper (Optional)
 
-MQTT events written to InfluxDB 3
+Goal: Auto-generate match highlights.
 
-Data persists across service restarts
+Deliverables:
+- `video-clipper`
+- Subscribes to `tennis/alerts/<type>`
+- Clips +/- N seconds
+- Uploads to S3/MinIO
+- Publishes to `tennis/clip_created`
 
-Time-range queries return correct data
+Definition of Done:
+- Alert -> clip -> playable URL
+- Clip metadata stored
 
-Token-based authentication verified
+## Phase 7 — Config + Service Registry
 
-🧠 Notes
+Goal: Improve scalability and maintainability.
 
-InfluxDB 3 Core requires Bearer token.
+Deliverables:
+- `config-service` for centralized rule parameters
+- `catalog-service` for service discovery
 
-Line protocol used for write efficiency.
+Definition of Done:
+- Rules adjustable without redeploy
+- Dynamic service registration
 
-Tags: stream, source_id
+## Phase 8 — Security Layer
 
-Field: payload (JSON string)
+Goal: Secure distributed services.
 
-Phase 2 — Real Producers (Edge Gateways)
-🎯 Goal
+Deliverables:
+- JWT authentication
+- Role-based access
+- Optional MQTT ACL
+- Secure REST endpoints
 
-Replace simulated data with real edge gateways.
+Definition of Done:
+- Unauthorized requests rejected
+- Roles enforced
 
-2A — Vision Gateway (YOLO)
-📦 Deliverables
+## Phase 9 — Thesis Evaluation and Validation
 
-vision-gateway service
+Goal: Produce thesis-grade measurable results.
 
-Reads RTSP / USB / video file
+Deliverables:
+- End-to-end latency
+- Throughput under load
+- Packet loss behavior
+- CPU/GPU usage (YOLO)
+- Service restart recovery
+- Broker restart behavior
+- DB reconnection logic
+- Architecture diagrams
+- Event schema specification
+- Deployment guide (Docker Compose)
+- Limitations and future work
 
-YOLO-based ball detection
-
-Basic tracking (ID + trajectory)
-
-Publishes:
-
-tennis/camera/<id>/ball
-
-✅ Definition of Done
-
-Ball detections appear in InfluxDB
-
-Stable publish rate
-
-Frame processing latency measured
-
-2B — Sensor Gateway (ST AIoT Craft)
-📦 Deliverables
-
-sensor-gateway
-
-Reads ST AIoT Craft output (BLE/UART/etc.)
-
-Publishes:
-
-tennis/sensor/<id>/events
-
-✅ Definition of Done
-
-Sensor data stored in DB
-
-Timestamp synchronization validated
-
-🧠 Engineering Notes
-
-Gateways publish only.
-
-They never access database directly.
-
-All persistence flows through ingest service.
-
-Time synchronization strategy must be defined:
-
-edge timestamp vs server timestamp
-
-Phase 3 — Rules Engine (Tennis Semantics)
-🎯 Goal
-
-Convert raw telemetry into tennis events.
-
-📦 Deliverables
-
-rules-engine microservice
-
-Correlates:
-
-sensor events
-
-ball trajectory
-
-Detects:
-
-bounce
-
-serve_ok / serve_fault
-
-out
-
-Publishes:
-
-tennis/alerts/<type>
-
-✅ Definition of Done
-
-Deterministic rule evaluation
-
-Reproducible alert generation
-
-Alerts stored in DB
-
-🧠 Notes
-
-This is where the project becomes academically interesting:
-
-Multi-stream correlation
-
-Time window alignment
-
-False positive control
-
-Phase 4 — Control Unit (System Orchestration)
-🎯 Goal
-
-Introduce system-level state and control plane.
-
-📦 Deliverables
-
-control-unit service
-
-Match states:
-
-idle
-
-warmup
-
-match
-
-maintenance
-
-Publishes:
-
-tennis/cmd/<target>
-
-
-Heartbeat monitoring:
-
-tennis/system/heartbeat/<node>
-
-✅ Definition of Done
-
-System behavior changes based on mode
-
-Services respond to commands
-
-🧠 Notes
-
-This introduces:
-
-Distributed coordination
-
-Operational robustness
-
-Phase 5 — Visualization Layer
-🎯 Goal
-
-Make the system observable.
-
-5A — Grafana MVP (Recommended First)
-📦 Deliverables
-
-InfluxDB datasource
-
-Panels:
-
-events/min
-
-stream breakdown
-
-alert rate
-
-time-series view
-
-✅ Definition of Done
-
-Real-time ingestion visible
-
-Historical exploration possible
-
-5B — Custom Web UI (Optional Advanced)
-
-React/Next.js dashboard
-
-Live feed via WebSocket
-
-Event replay
-
-Phase 6 — Highlight Clipper (Optional Advanced Feature)
-🎯 Goal
-
-Auto-generate match highlights.
-
-📦 Deliverables
-
-video-clipper
-
-Subscribes to:
-
-tennis/alerts/<type>
-
-
-Clips ±N seconds
-
-Uploads to S3/MinIO
-
-Publishes:
-
-tennis/clip_created
-
-✅ Definition of Done
-
-Alert → clip → playable URL
-
-Clip metadata stored
-
-Phase 7 — Config + Service Registry
-🎯 Goal
-
-Improve scalability and maintainability.
-
-Deliverables
-
-config-service
-
-Centralized rule parameters
-
-catalog-service for service discovery
-
-Definition of Done
-
-Rules adjustable without redeploy
-
-Dynamic service registration
-
-Phase 8 — Security Layer
-🎯 Goal
-
-Secure distributed services.
-
-Deliverables
-
-JWT authentication
-
-Role-based access
-
-Optional MQTT ACL
-
-Secure REST endpoints
-
-Definition of Done
-
-Unauthorized requests rejected
-
-Roles enforced
-
-Phase 9 — Thesis Evaluation & Validation
-🎯 Goal
-
-Produce thesis-grade measurable results.
-
-Deliverables
-System Evaluation
-
-End-to-end latency
-
-Throughput under load
-
-Packet loss behavior
-
-CPU/GPU usage (YOLO)
-
-Reliability Tests
-
-Service restart recovery
-
-Broker restart behavior
-
-DB reconnection logic
-
-Documentation
-
-Architecture diagrams
-
-Event schema specification
-
-Deployment guide (Docker Compose)
-
-Limitations & future work
-
-Definition of Done
-
-Fully reproducible demo
-
-Measured performance metrics
-
-Academic documentation ready
+Definition of Done:
+- Fully reproducible demo
+- Measured performance metrics
+- Academic documentation ready
